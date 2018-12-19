@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+    <style type="text/css">
+        body, html{width: 100%;height: 100%;margin:0;font-family:"微软雅黑";}
+        #allmap {width: 100%; height:850px; overflow: hidden;}
+        #result {width:100%;height:100px;font-size:12px;}
+        dl,dt,dd,ul,li{
+            margin:0;
+            padding:0;
+            list-style:none;
+        }
+        p{font-size:12px;}
+        dt{
+            font-size:14px;
+            font-family:"微软雅黑";
+            font-weight:bold;
+            border-bottom:1px dotted #000;
+            padding:5px 0 5px 5px;
+            margin:5px 0;
+        }
+        dd{
+            padding:5px 0 0 5px;
+        }
+        li{
+            line-height:28px;
+        }
+    </style>
+    <script type="text/javascript" src="http://api.map.baidu.com/api?v=2.0&ak=99jC47pfOjXWm0umboUO0sz1EpoWi1rg"></script>
+    <!--加载鼠标绘制工具-->
+    <script type="text/javascript" src="http://api.map.baidu.com/library/DrawingManager/1.4/src/DrawingManager_min.js"></script>
+    <link rel="stylesheet" href="http://api.map.baidu.com/library/DrawingManager/1.4/src/DrawingManager_min.css" />
+    <!--加载检索信息窗口-->
+    <script type="text/javascript" src="http://api.map.baidu.com/library/SearchInfoWindow/1.4/src/SearchInfoWindow_min.js"></script>
+    <link rel="stylesheet" href="http://api.map.baidu.com/library/SearchInfoWindow/1.4/src/SearchInfoWindow_min.css" />
+    <title>鼠标绘制工具</title>
+</head>
+<body>
+<div id="allmap" style="overflow:hidden;zoom:1;position:relative; margin-top: 10px;">
+	请输入城市名: <input id="cityName" type="text" value="广州市" style="width:100px;margin-right:10px;margin-bottom: 10px;" />
+	<input id = 'addCityname' style=" margin-right: 20px;margin-left: 20px;"  type="button" value="确定"/>
+	关键字: <input value = '南沙碧桂园' type="text" id = "keyword">
+	<input id = 'search' type="button" style="margin-top: 8px; margin-left: 20px;" value="搜索"/>
+    <div id="map" style="height:100%;-webkit-transition: all 0.5s ease-in-out;transition: all 0.5s ease-in-out;"></div>
+</div>
+<div id="result" style=" margin-top: 10px;">
+    <!--<input type="button" value="获取" onclick="onc()"/> -->
+	<input id="startJob" style="width: 100px;height: 60px; height:50px; margin-left:30px;" type="button" value="开始作业" onclick="startJob()" />
+	<a onfocus="this.blur();" download="code.txt" id="createInvote" class="ipt-todo hide" >code</a>
+	<input style="width: 100px;height: 60px; margin-left:30px" type="button" value="移除上一个" onclick="clearOne()"/>
+	<input style="width: 100px;height: 60px; margin-left:30px" type="button" value="全部清除" onclick="clearAll()"/>
+	当前多边形坐标经纬度:<input id="endJob" style="width: 100px;height: 60px; margin-left:30px;" type="button" value="结束作业，并导出"  onclick="endJob()"/><br>
+	
+	
+    <input style="width: 80%;height: 50px; margin-left:30px; margin-top: 10px;" type="text" id = "draw">
+	<button id="btn">点我复制</button><br>
+	
+	<br>
+	
+	
+</div>
+<script type="text/javascript">
+
+    // 百度地图API功能
+    var map = new BMap.Map('map');
+    var poi = new BMap.Point(116.307852,40.057031);
+    map.centerAndZoom(poi, 16);
+    map.enableScrollWheelZoom();
+	
+	var local = new BMap.LocalSearch(map, {
+		renderOptions:{map: map}
+	});
+	local.search("景点");
+	
+	var oneJobCoordList = []; //一个作业之内的所有边界数据集合
+	var jobFlag = false; //是否开启作业
+	var strHTML = "Polygon\n1 0\n"; //写入文本内容
+	var count = 0;
+	
+    var overlays = [];
+    var jsonstr = "";
+	var jsonstr2 =  "";
+    var overlaycomplete = function(e){
+		jsonstr = " ";
+        jsonstr2 = count + " ";
+        overlay= e.overlay.ia;
+        var first_lng = "";
+        var first_lat = "";
+        for(var i =0; i < overlay.length; i++) {
+            lng = overlay[i].lng;
+            lat = overlay[i].lat;
+            var cg20_orrd = bd09togcj02(parseFloat(lng), parseFloat(lat));
+            lng = cg20_orrd[0]
+            lat = cg20_orrd[1]
+            var wgs_orrd = gcj02towgs84(parseFloat(lng), parseFloat(lat));
+            lng = wgs_orrd[0]
+            lat = wgs_orrd[1]
+            if(i == 0) {
+                first_lng = lng;
+                first_lat = lat;
+            }
+            jsonstr += lng + "," + lat + "_";
+			jsonstr2 += " " + lng + " " + lat;
+        }
+        jsonstr += first_lng + "," + first_lat + "_";
+		jsonstr2 += first_lng + " " + first_lat;
+
+        //TODO 获取到的边界处理
+        document.getElementById("draw").value = jsonstr.substr(0, jsonstr.lastIndexOf("_"));
+		
+		if(jobFlag) { //如果开启了job作业,则需要将绘制的边界坐标添加到边界数据集合
+			oneJobCoordList.push(jsonstr);
+			strHTML += jsonstr2 + "\n";
+		}
+		
+
+        //jsonstr = JSON.stringify(e.overlay);
+        overlays.push(e.overlay);
+		count += 1;
+    };
+	
+	
+	
+    var onc = function(e) {
+        console.log(jsonstr);
+    }
+    var styleOptions = {
+        strokeColor:"red",    //边线颜色。
+        fillColor:"red",      //填充颜色。当参数为空时，圆形将没有填充效果。
+        strokeWeight: 3,       //边线的宽度，以像素为单位。
+        strokeOpacity: 0.8,	   //边线透明度，取值范围0 - 1。
+        fillOpacity: 0.6,      //填充的透明度，取值范围0 - 1。
+        strokeStyle: 'solid' //边线的样式，solid或dashed。
+    }
+    //实例化鼠标绘制工具
+    var drawingManager = new BMapLib.DrawingManager(map, {
+        isOpen: false, //是否开启绘制模式
+        enableDrawingTool: true, //是否显示工具栏
+        drawingToolOptions: {
+            anchor: BMAP_ANCHOR_TOP_RIGHT, //位置
+            offset: new BMap.Size(5, 5), //偏离值
+        },
+        circleOptions: styleOptions, //圆的样式
+        polylineOptions: styleOptions, //线的样式
+        polygonOptions: styleOptions, //多边形的样式
+        rectangleOptions: styleOptions //矩形的样式
+    });
+    //添加鼠标绘制工具监听事件，用于获取绘制结果
+    drawingManager.addEventListener('overlaycomplete', overlaycomplete);
+	
+	/**
+	 * 移除上一个
+	 */
+    function clearOne() {
+		debugger;
+        for(var i = 0; i < overlays.length; i++){
+			if(i == overlays.length - 1) {
+				map.removeOverlay(overlays[i]);
+			}
+        }
+        overlays.length = overlays.length - 1;
+        document.getElementById("draw").value = "";
+		var result = "";
+		if(strHTML != null) {
+			var strArr = strHTML.split("\n");
+			var result = "";
+			for(var i = 0; i < strArr.length; i ++){
+				if(i != strArr.length - 1) {
+					result += strArr[i] + "\n";
+				}
+			}
+			
+			strHTML = result.substr(0 ,result.lastIndexOf("\n"));
+		}
+		
+    }
+	
+	/**
+	 * 移除所有
+	 */
+	function clearAll() {
+		for(var i = 0; i < overlays.length; i++){
+			map.removeOverlay(overlays[i]);
+		}
+		overlays.length = 0;
+		oneJobCoordList = [];
+		//jobFlag = false;
+		count = 0;
+		strHTML = "";
+		document.getElementById("draw").value = "";
+	}
+	
+	
+	/**
+	 * 搜索
+	 */
+	document.getElementById("search").onclick = function(){
+		var keyword = document.getElementById("keyword").value;
+		var local = new BMap.LocalSearch(map, {
+			renderOptions:{map: map}
+		});
+		local.search(keyword);
+		map.enableScrollWheelZoom();
+	}
+	
+	/**
+	 * 		g根据城市名进行定位
+	 */
+	document.getElementById("addCityname").onclick = function(){
+			var city = document.getElementById("cityName").value;
+			if(city != ""){
+				map.centerAndZoom(city,16);      // 用城市名设置地图中心点
+				
+			}
+	}
+	
+	
+	/**
+	 * 复制坐标到粘贴板
+	 */
+	const btn = document.querySelector('#btn');
+		btn.addEventListener('click', () => {
+		const input = document.querySelector('#draw');
+		input.select();
+		if (document.execCommand('copy')) {
+			document.execCommand('copy');
+			console.log('复制成功');
+		}
+	})
+	
+	
+	//根据城市名定位
+	function theLocation(){
+		var city = document.getElementById("cityName").value;
+		if(city != ""){
+			map.centerAndZoom(city,16);      // 用城市名设置地图中心点
+		}
+	}
+	
+	/**
+	 * 开始作业
+	 */
+	function startJob() {
+		jobFlag = true;
+	}
+	
+	/**
+	 * 结束作业并导出
+	 */
+	function endJob() {
+		//alert("总的绘制了：" + oneJobCoordList.length + "条数据");
+		for(var i = 0; i < 	oneJobCoordList.length; i++) {
+			//alert("第" + i + "条数据：" + oneJobCoordList[i]);
+		}
+		
+		
+		var isIE = (navigator.userAgent.indexOf('MSIE') >= 0);
+		if (isIE) {
+			 var winSave = window.open();
+			 winSave.document.open("text","utf-8");
+			 winSave.document.write(strHTML);
+			 winSave.document.execCommand("SaveAs",true,"code.txt");
+			 winSave.close();
+		} else {
+			 var mimeType =  'text/plain';
+			 document.getElementById('createInvote').setAttribute('href', 'data:' + mimeType  +  ';charset=utf-8,' + encodeURIComponent(strHTML));
+			 document.getElementById('createInvote').click();
+		}
+		
+		
+		oneJobCoordList = [];
+		jobFlag = false;
+		count = 0;
+		strHTML = "";
+	}
+
+
+    /**
+     * Created by Wandergis on 2015/7/8.
+     * 提供了百度坐标（BD09）、国测局坐标（火星坐标，GCJ02）、和WGS84坐标系之间的转换
+     */
+
+//定义一些常量
+    var x_PI = 3.14159265358979324 * 3000.0 / 180.0;
+    var PI = 3.1415926535897932384626;
+    var a = 6378245.0;
+    var ee = 0.00669342162296594323;
+
+    /**
+     * 百度坐标系 (BD-09) 与 火星坐标系 (GCJ-02)的转换
+     * 即 百度 转 谷歌、高德
+     * @param bd_lon
+     * @param bd_lat
+     * @returns {*[]}
+     */
+    function bd09togcj02(bd_lon, bd_lat) {
+        var x_pi = 3.14159265358979324 * 3000.0 / 180.0;
+        var x = bd_lon - 0.0065;
+        var y = bd_lat - 0.006;
+        var z = Math.sqrt(x * x + y * y) - 0.00002 * Math.sin(y * x_pi);
+        var theta = Math.atan2(y, x) - 0.000003 * Math.cos(x * x_pi);
+        var gg_lng = z * Math.cos(theta);
+        var gg_lat = z * Math.sin(theta);
+        return [gg_lng, gg_lat]
+    }
+
+    /**
+     * 火星坐标系 (GCJ-02) 与百度坐标系 (BD-09) 的转换
+     * 即谷歌、高德 转 百度
+     * @param lng
+     * @param lat
+     * @returns {*[]}
+     */
+    function gcj02tobd09(lng, lat) {
+        var z = Math.sqrt(lng * lng + lat * lat) + 0.00002 * Math.sin(lat * x_PI);
+        var theta = Math.atan2(lat, lng) + 0.000003 * Math.cos(lng * x_PI);
+        var bd_lng = z * Math.cos(theta) + 0.0065;
+        var bd_lat = z * Math.sin(theta) + 0.006;
+        return [bd_lng, bd_lat]
+    }
+
+    /**
+     * WGS84转GCj02
+     * @param lng
+     * @param lat
+     * @returns {*[]}
+     */
+    function wgs84togcj02(lng, lat) {
+        if (out_of_china(lng, lat)) {
+            return [lng, lat]
+        }
+        else {
+            var dlat = transformlat(lng - 105.0, lat - 35.0);
+            var dlng = transformlng(lng - 105.0, lat - 35.0);
+            var radlat = lat / 180.0 * PI;
+            var magic = Math.sin(radlat);
+            magic = 1 - ee * magic * magic;
+            var sqrtmagic = Math.sqrt(magic);
+            dlat = (dlat * 180.0) / ((a * (1 - ee)) / (magic * sqrtmagic) * PI);
+            dlng = (dlng * 180.0) / (a / sqrtmagic * Math.cos(radlat) * PI);
+            var mglat = lat + dlat;
+            var mglng = lng + dlng;
+            return [mglng, mglat]
+        }
+    }
+
+    /**
+     * GCJ02 转换为 WGS84
+     * @param lng
+     * @param lat
+     * @returns {*[]}
+     */
+    function gcj02towgs84(lng, lat) {
+        if (out_of_china(lng, lat)) {
+            return [lng, lat]
+        }
+        else {
+            var dlat = transformlat(lng - 105.0, lat - 35.0);
+            var dlng = transformlng(lng - 105.0, lat - 35.0);
+            var radlat = lat / 180.0 * PI;
+            var magic = Math.sin(radlat);
+            magic = 1 - ee * magic * magic;
+            var sqrtmagic = Math.sqrt(magic);
+            dlat = (dlat * 180.0) / ((a * (1 - ee)) / (magic * sqrtmagic) * PI);
+            dlng = (dlng * 180.0) / (a / sqrtmagic * Math.cos(radlat) * PI);
+            mglat = lat + dlat;
+            mglng = lng + dlng;
+            return [lng * 2 - mglng, lat * 2 - mglat]
+        }
+    }
+
+    function transformlat(lng, lat) {
+        var ret = -100.0 + 2.0 * lng + 3.0 * lat + 0.2 * lat * lat + 0.1 * lng * lat + 0.2 * Math.sqrt(Math.abs(lng));
+        ret += (20.0 * Math.sin(6.0 * lng * PI) + 20.0 * Math.sin(2.0 * lng * PI)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(lat * PI) + 40.0 * Math.sin(lat / 3.0 * PI)) * 2.0 / 3.0;
+        ret += (160.0 * Math.sin(lat / 12.0 * PI) + 320 * Math.sin(lat * PI / 30.0)) * 2.0 / 3.0;
+        return ret
+    }
+
+    function transformlng(lng, lat) {
+        var ret = 300.0 + lng + 2.0 * lat + 0.1 * lng * lng + 0.1 * lng * lat + 0.1 * Math.sqrt(Math.abs(lng));
+        ret += (20.0 * Math.sin(6.0 * lng * PI) + 20.0 * Math.sin(2.0 * lng * PI)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(lng * PI) + 40.0 * Math.sin(lng / 3.0 * PI)) * 2.0 / 3.0;
+        ret += (150.0 * Math.sin(lng / 12.0 * PI) + 300.0 * Math.sin(lng / 30.0 * PI)) * 2.0 / 3.0;
+        return ret
+    }
+
+    /**
+     * 判断是否在国内，不在国内则不做偏移
+     * @param lng
+     * @param lat
+     * @returns {boolean}
+     */
+    function out_of_china(lng, lat) {
+        return (lng < 72.004 || lng > 137.8347) || ((lat < 0.8293 || lat > 55.8271) || false)
+    }
+
+</script>
+</body>
+</html>
